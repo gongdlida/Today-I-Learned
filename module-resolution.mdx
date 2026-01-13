@@ -105,25 +105,55 @@ TypeScript 컴파일러는 **import specifier를 그대로 유지**한다.
 
 ---
 
-## 4. 그럼 alias는 언제 동작하는가?
+### 4. alias는 언제, 어떻게 “동작”하는가?
 
-alias가 정상 동작하는 환경에는 항상 **중간 단계**가 존재한다.
+여기서 말하는 “동작”은 런타임에서 `@/…` 같은 문자열을 브라우저가 이해할 수 있는 실제 URL/경로로 변환하는 과정을 의미한다.
+이 변환은 브라우저가 아니라 중간 도구(번들러/개발 서버/후처리 도구)가 수행한다.
 
-### 번들러가 있는 경우
+- 브라우저: alias 개념이 없어, 문자열을 그대로 URL로 해석
+- TypeScript(tsc): `paths`로 타입만 찾고, import 문자열은 그대로 유지
 
-- Vite
-- Webpack
-- Rollup
-- Next.js
-
-이 도구들의 역할은 다음과 같다.
+- 번들러/개발 서버(Vite, Webpack, Rollup, Next.js 등): 설정된 `resolve.alias`에 따라 **import 경로를 실제 파일 위치로 재작성**하거나 **가상 모듈로 매핑**해 런타임에서 로드 가능하게 함
+- 후처리 도구(tsc-alias 등): tsc 출력 JS를 후처리하여 **상대 경로로 치환**
 
 ```text
-"@/utils" -> (번들러) -> "./src/utils.js" -> 브라우저가 이해 가능한 URL
+"@/utils" -> (번들러/후처리 도구) -> "./src/utils.js" -> 브라우저가 이해 가능한 URL
 ```
 
-즉, **번들러가 alias를 실제 경로로 변환해 주기 때문에**
-브라우저에서 문제없이 동작하는 것이다.
+즉, alias가 “동작”하려면 **런타임 해석 단계**가 반드시 필요하다.  
+보통은 번들러 설정에 tsconfig의 alias와 동일한 매핑을 추가한다.
+
+예시(설정 일치가 핵심):
+
+```json
+// tsconfig.json — 타입 해석용
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  }
+}
+```
+
+```js
+// vite.config.js — 런타임 해석용(개발/빌드)
+import { defineConfig } from 'vite'
+import path from 'path'
+
+export default defineConfig({
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, 'src')
+    }
+  }
+})
+```
+
+- “alias가 있다”는 말은 곧 “도구가 그 문자열을 **실제 경로/URL로 변환**한다”는 뜻이다.
+- tsconfig의 `paths`만으로는 브라우저에서 작동하지 않는다. 번들러(혹은 후처리) 설정이 있어야 한다.
+- 개발과 빌드 모두에서 동작시키려면 두 환경의 alias 설정을 **동일하게 유지**해야 한다.
 
 ---
 
