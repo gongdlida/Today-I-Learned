@@ -1,0 +1,203 @@
+# 다형성
+
+다형성은 같은 메서드 호출이 객체별로 다른 구현으로 동작하는 것
+
+## 1. 인터페이스 구현 기반
+
+여러 클래스가 동일한 인터페이스를 구현해 같은 메서드 이름으로 서로 다른 동작을 제공
+예를 들어 Payment 인터페이스의 pay(amount) 메서드를 카드, 계좌이체, 포인트가 각자 다르게 처리
+호출자는 Payment 타입만 의존하고 실제 구현은 런타임에 선택
+
+```ts
+// 동일 시그니처 pay(amount)를 가진 서로 다른 결제 수단
+
+interface Payment {
+  pay(amount: number): string
+}
+
+class CardPayment implements Payment {
+  constructor(private cardNumber: string) {}
+
+  pay(amount: number): string {
+    return `Charged ${amount} via card ${this.cardNumber}`
+  }
+}
+
+class BankTransferPayment implements Payment {
+  constructor(private account: string) {}
+
+  pay(amount: number): string {
+    return `Transferred ${amount} from account ${this.account}`
+  }
+}
+
+class PointsPayment implements Payment {
+  constructor(private pointsBalance: number) {}
+
+  pay(amount: number): string {
+    if (amount > this.pointsBalance) return 'Insufficient points'
+    this.pointsBalance -= amount
+    return `Redeemed ${amount} points. Remaining: ${this.pointsBalance}`
+  }
+}
+
+const checkout = (paymentMethod: Payment, amount: number) => {
+  return paymentMethod.pay(amount)
+}
+
+console.log(checkout(new CardPayment('1111-2222-3333-4444'), 100))
+console.log(checkout(new BankTransferPayment('KR-123-456'), 250))
+console.log(checkout(new PointsPayment(200), 150))
+```
+
+## 2. 프로토타입 체인 섀도잉
+
+객체가 프로토타입의 메서드와 같은 이름의 메서드를 자체적으로 정의하는 경우
+같은 greet() 호출이라도 각 인스턴스가 가진 구현이 우선되어 다른 결과를 반환  
+이는 상속 없이도 동적 디스패치처럼 작동
+
+```ts
+class Person {
+  constructor(public name: string) {}
+
+  greet() {
+    return `Hello, I'm ${this.name}`
+  }
+}
+
+const alice = new Person('Alice')
+console.log(alice.greet()) // "Hello, I'm Alice"
+
+const bob = new Person('Bob')
+// 인스턴스에서 메서드 섀도잉 (override-like)
+bob.greet = function (this: Person) {
+  return `Yo, ${this.name} here!`
+}
+console.log(bob.greet()) // "Yo, Bob here!"
+```
+
+** 섀도잉 - 같은 이름의 식별자가 내부 스코프에 존재할 때, 식별자 조회가 내부 바인딩을 우선 선택해 외부 바인딩을 보이지 않게 만드는 현상**
+
+## 3. 전략 패턴(합성 교체)
+
+객체가 동일한 메서드 이름을 가진 인스턴스를 주입받아 인스턴스의 메서드를 실행  
+전략을 교체하면 같은 호출이 다른 알고리즘으로 수행됩
+상속 없이도 다형성을 달성하는 합성 기반 접근
+
+```ts
+interface CompressionStrategy {
+  compress(data: string): string
+}
+
+class Compressor {
+  private strategy: CompressionStrategy
+
+  constructor(strategy: CompressionStrategy) {
+    this.strategy = strategy
+  }
+
+  setStrategy(strategy: CompressionStrategy) {
+    this.strategy = strategy
+  }
+
+  compress(data: string) {
+    return this.strategy.compress(data)
+  }
+}
+
+class ZipStrategy implements CompressionStrategy {
+  compress(data: string) {
+    return `ZIP(${data.length} bytes)`
+  }
+}
+
+class GzipStrategy implements CompressionStrategy {
+  compress(data: string) {
+    return `GZIP(${data.length} bytes)`
+  }
+}
+
+const comp = new Compressor(new ZipStrategy())
+console.log(comp.compress('hello world')) // ZIP(11 bytes)
+comp.setStrategy(new GzipStrategy())
+console.log(comp.compress('hello world')) // GZIP(11 bytes)
+```
+
+## 4. 오버로딩 시뮬레이션(동적 타입 분기)
+
+정적 언어의 메서드 오버로딩처럼 보이지만,  
+동적 언어에서는 하나의 메서드가 입력 타입/형식에 따라 다른 분기를 타며 서로 다른 동작을 수행  
+동일한 메서드 호출이 데이터 형태에 따라 다른 결과를 내므로 효과적으로 다형적
+
+```ts
+class InputHandler {
+  handle(input: string | any[] | object): string {
+    if (typeof input === 'string') return this._handleString(input)
+    if (Array.isArray(input)) return this._handleArray(input)
+    if (typeof input === 'object' && input !== null)
+      return this._handleObject(input)
+    throw new TypeError('Unsupported input type')
+  }
+  _handleString = (s: string) => `string:${s.toLowerCase()}`
+  _handleArray = (a: any[]) => `array:${a.length}`
+  _handleObject = (o: object) => `object:${Object.keys(o).length}`
+}
+
+const h = new InputHandler()
+console.log(h.handle('ABC')) // string:abc
+console.log(h.handle([1, 2, 3])) // array:3
+console.log(h.handle({ a: 1, b: 2 })) // object:2
+```
+
+## 5. Duck typing
+
+인터페이스 선언 없이도 “같은 메서드를 제공하면 같은 방식으로 쓸 수 있다”는 컨벤션으로 동작하는 다형성
+draw()를 가진 객체라면 라이브러리에서 모두 그릴 수 있고,  
+구체 타입이 달라도 동일 호출이 객체별 구현으로 실행
+
+```ts
+interface Drawable {
+  draw(): string
+}
+
+const renderAll = (drawables: Drawable[]) => {
+  for (const item of drawables) {
+    console.log(item.draw())
+  }
+}
+
+const Circle = {
+  radius: 10,
+  draw() {
+    return `Drawing circle r=${this.radius}`
+  }
+}
+
+class Square implements Drawable {
+  constructor(public size: number) {}
+  draw() {
+    return `Drawing square size=${this.size}`
+  }
+}
+
+const makeTriangle = (size: number): Drawable =>
+  ({
+    size: size, // 'size' implicitly has any type if not typed in interface, but here we just return object.
+    // To satisfy Drawable, we only need 'draw'.
+    // We can keep 'size' as internal property.
+    draw() {
+      return `Drawing triangle size=${this.size}`
+    }
+  } as Drawable & { size: number })
+
+const triangle = makeTriangle(7)
+
+const triangleFactory = (size: number) => ({
+  size,
+  draw() {
+    return `Drawing triangle size=${this.size}`
+  }
+})
+
+renderAll([Circle, new Square(5), triangleFactory(7), triangle])
+```
